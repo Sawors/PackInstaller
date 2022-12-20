@@ -7,7 +7,7 @@ import 'dog_model.dart';*/
 void main() {
   //runApp(const MyApp());
   ProfileManager.init();
-  PackInstaller.downloadModpack(Uri.parse("https://github.com/Sawors/PackInstaller/raw/7275934d2325eb08ea531130917f7701eba14739/lib/modpack_installer/sample_modpack/sample_modpack.zip"));
+  PackInstaller.setupModpack(Uri.parse("https://github.com/Sawors/PackInstaller/raw/7275934d2325eb08ea531130917f7701eba14739/lib/modpack_installer/sample_modpack/sample_modpack.zip"));
 }
 
 

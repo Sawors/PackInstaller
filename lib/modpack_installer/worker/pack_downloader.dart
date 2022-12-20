@@ -2,7 +2,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
 import 'package:uuid/uuid.dart';
 
@@ -99,7 +98,7 @@ class ProfileData {
 }
 
 enum ModLoader {
-  forge, fabric, quilt, vanilla
+  forge, fabric, vanilla
 }
 
 class ModpackData {
@@ -115,6 +114,7 @@ class ModpackData {
   Uri? discord;
   String server;
   String author;
+  int ram;
 
   ModpackData({
           this.name = "Unnamed",
@@ -128,8 +128,13 @@ class ModpackData {
           this.source,
           this.discord,
           this.server = "",
-          this.author = "Unknown"
+          this.author = "Unknown",
+          this.ram = 4
         });
+
+  String getProfileName(){
+    return "$name $mcVersion";
+  }
 }
 
 enum ModpackManifestField {
@@ -144,7 +149,8 @@ enum ModpackManifestField {
   source("source"),
   discord("discord"),
   serverIp("server"),
-  authorName("author")
+  authorName("author"),
+  suggestedRamAmount("suggested-ram-amount")
   ;
 
   final String serializableName;
@@ -156,12 +162,49 @@ class PackInstaller {
   // modpacks from the internet but more like a tool to keep certain modpacks
   // for certain servers up to date.
 
-  static Future<ModpackData> downloadModpack(Uri source) async {
+  static void setupModpack(Uri source) async{
+    // download the zip file
+    print("-> Downloading modpack...");
+    File modpackArchive = await _downloadModpack(source);
+    print("-> Downloaded modpack !");
+    // reads the manifest and unpacks the zip file to the (generated) profile directory
+    print("-> Installing modpack...");
+    ModpackData modpackData = await _installModpack(modpackArchive);
+    print("-> Installed modpack !");
+    // checks if the modloader version is present
+    print("-> Searching versions...");
+    String versionName = await _checkLauncherGameVersion(modpackData);
+    print("-> Version search finished !");
+
+    List<int> imageData = [];
+    int ram = 4;
+    int systemRam = 34359738368 ~/ (1024*1024*1024);
+
+    if(systemRam < 4){
+      print("error : system has not enough RAM ($systemRam is to little)");
+    } else if (systemRam <= 8){
+      ram = 4;
+    } else if (systemRam <= 16){
+      ram = 8;
+    } else if (systemRam > 16){
+      ram = 10;
+    }
+
+    print(systemRam);
+    print(ram);
+
+    ProfileData profile = ProfileData(
+      name: modpackData.getProfileName(),
+      profilePicture: base64Encode(imageData),
+      versionId: versionName,
+      ramAmount: ram
+    );
+  }
+
+  static Future<File> _downloadModpack(Uri source) async {
     // https://github.com/Sawors/PackInstaller/blob/7275934d2325eb08ea531130917f7701eba14739/lib/modpack_installer/sample_modpack/sample_modpack.zip
     final String separator = Platform.pathSeparator;
     String downloadId = const Uuid().v1();
-
-    print(source);
 
     final request = await HttpClient().getUrl(source);
     final response = await request.close();
@@ -174,24 +217,8 @@ class PackInstaller {
       print(e);
     }
 
-    ModpackData data = ModpackData();
-
     await response.pipe(target.openWrite());
-
-    data = await _installModpack(target);
-    print(data.name);
-    print(data.mcVersion);
-    print(data.loader);
-    print(data.loaderVersion);
-    print(data.miniature);
-    print(data.headline);
-    print(data.description);
-    print(data.packVersion);
-    print(data.source);
-    print(data.discord);
-    print(data.server);
-    print(data.author);
-    return data;
+    return target;
   }
 
   static Future<ModpackData> _installModpack(File modpackArchive) async {
@@ -218,7 +245,7 @@ class PackInstaller {
     ModpackData data = ModpackData(
       name: packDataMap[ModpackManifestField.name.serializableName] ?? "Unnamed",
       mcVersion: packDataMap[ModpackManifestField.minecraftVersion.serializableName] ?? "1.12.2",
-      loader: ModLoader.values.firstWhere((element) => element.toString() == (packDataMap[ModpackManifestField.modLoader.serializableName] ?? "vanilla"), orElse: () => ModLoader.vanilla),
+      loader: ModLoader.values.firstWhere((element) => element.name == (packDataMap[ModpackManifestField.modLoader.serializableName] ?? "vanilla"), orElse: () => ModLoader.vanilla),
       loaderVersion: packDataMap[ModpackManifestField.modLoaderVersion.serializableName] ?? "14.23.5.2859",
       miniature: packDataMap[ModpackManifestField.miniature.serializableName] ?? "pack.png",
       headline: packDataMap[ModpackManifestField.headline.serializableName] ?? "An unknown modpack",
@@ -253,10 +280,65 @@ class PackInstaller {
     return data;
   }
 
+  static Future<String> _checkLauncherGameVersion(ModpackData reference) async {
+    Stream<FileSystemEntity> versions = Directory("${ProfileManager._root.path}${Platform.pathSeparator}versions").list(recursive: false, followLinks: false);
+    List<String> possibleVersions = [];
+
+    String exactMatch = "";
+    await versions.forEach((element) {
+      List<String> pathParts = element.path.split(Platform.pathSeparator);
+      String dirName = (pathParts[pathParts.length-1]);
+      if(dirName.toLowerCase().contains(reference.mcVersion) && dirName.toLowerCase().contains(reference.loader.name)){
+        possibleVersions.add(dirName);
+        if(dirName.toLowerCase().contains(reference.loaderVersion)){
+          exactMatch = dirName;
+        }
+      }
+    });
+    final String errorMessage = "No matching game version found, download the correct version at : "
+        "${getModLoaderDownloadLink(reference.loader, reference.mcVersion, reference.loaderVersion)} ";
+    if(exactMatch.isNotEmpty){
+      print("Version $exactMatch found !");
+    } else if(possibleVersions.isNotEmpty){
+      String versionListPrint = "";
+      for (var element in possibleVersions) {versionListPrint += "\n  $element";}
+      print("$errorMessage"
+          "\nor use one of the following at your own risk : $versionListPrint");
+    } else {
+      print(errorMessage);
+    }
+
+    return exactMatch;
+  }
+
+  static Future<ProfileData> _generateProfile(ModpackData sourceData) async {
+
+
+
+    return ProfileData();
+  }
+
   static String _getFileName(File file) {
     final List<String> path = file.path.split(Platform.pathSeparator);
     final String name = path[path.length-1];
     return name.substring(0,name.indexOf("."));
+  }
+
+  static Uri? getModLoaderDownloadLink(ModLoader loader, String gameVersion, String loaderVersion){
+    String source = "";
+    switch(loader){
+      case ModLoader.forge:
+        String identifier = "$gameVersion-$loaderVersion";
+        source = "https://maven.minecraftforge.net/net/minecraftforge/forge/$identifier/forge-$identifier-installer.jar";
+        break;
+      case ModLoader.fabric:
+        source = "https://maven.fabricmc.net/net/fabricmc/fabric-installer/$loaderVersion/fabric-installer-$loaderVersion.jar";
+        break;
+        break;
+      case ModLoader.vanilla:
+        return null;
+    }
+    return Uri.tryParse(source);
   }
 
 }
