@@ -129,7 +129,7 @@ class ModpackData {
           this.discord,
           this.server = "",
           this.author = "Unknown",
-          this.ram = 4
+          this.ram = 0
         });
 
   String getProfileName(){
@@ -150,7 +150,7 @@ enum ModpackManifestField {
   discord("discord"),
   serverIp("server"),
   authorName("author"),
-  suggestedRamAmount("suggested-ram-amount")
+  ram("suggested-ram-amount")
   ;
 
   final String serializableName;
@@ -161,6 +161,8 @@ class PackInstaller {
   // The idea of this pack installer is not to be used as a regular way to download
   // modpacks from the internet but more like a tool to keep certain modpacks
   // for certain servers up to date.
+
+  static const String messageSpacer = "    ";
 
   static void setupModpack(Uri source) async{
     // download the zip file
@@ -175,23 +177,32 @@ class PackInstaller {
     print("-> Searching versions...");
     String versionName = await _checkLauncherGameVersion(modpackData);
     print("-> Version search finished !");
-
+    print("-> Generating profile...");
     List<int> imageData = [];
     int ram = 4;
     int systemRam = 34359738368 ~/ (1024*1024*1024);
 
-    if(systemRam < 4){
-      print("error : system has not enough RAM ($systemRam is to little)");
-    } else if (systemRam <= 8){
-      ram = 4;
-    } else if (systemRam <= 16){
-      ram = 8;
-    } else if (systemRam > 16){
-      ram = 10;
+    if(modpackData.ram > 0){
+      // using suggested ram
+      print("${messageSpacer}Using suggested ram amount for profile");
+      ram = modpackData.ram;
+      if(ram > systemRam*0.75){
+        print("${messageSpacer}WARNING : You have less RAM than the suggested amount for this modpack (${systemRam}G is to few, suggested is ${ram}G)");
+      }
+    } else {
+      print("${messageSpacer}Using automatic ram for profile");
+      // using auto ram
+      if(systemRam < 4){
+        //TODO : add error handling
+        print("${messageSpacer}ERROR : system has not enough RAM (${systemRam}G is to few)");
+      } else if (systemRam <= 8){
+        ram = 4;
+      } else if (systemRam <= 16){
+        ram = 8;
+      } else if (systemRam > 16){
+        ram = 10;
+      }
     }
-
-    print(systemRam);
-    print(ram);
 
     ProfileData profile = ProfileData(
       name: modpackData.getProfileName(),
@@ -199,6 +210,11 @@ class PackInstaller {
       versionId: versionName,
       ramAmount: ram
     );
+    print("${messageSpacer}Profile name : ${profile.name}");
+    print("${messageSpacer}Profile version : ${profile.versionId}");
+    print("${messageSpacer}Profile RAM : ${profile.ramAmount}G");
+
+    print("-> Profile generated !");
   }
 
   static Future<File> _downloadModpack(Uri source) async {
@@ -246,7 +262,7 @@ class PackInstaller {
       name: packDataMap[ModpackManifestField.name.serializableName] ?? "Unnamed",
       mcVersion: packDataMap[ModpackManifestField.minecraftVersion.serializableName] ?? "1.12.2",
       loader: ModLoader.values.firstWhere((element) => element.name == (packDataMap[ModpackManifestField.modLoader.serializableName] ?? "vanilla"), orElse: () => ModLoader.vanilla),
-      loaderVersion: packDataMap[ModpackManifestField.modLoaderVersion.serializableName] ?? "14.23.5.2859",
+      loaderVersion: packDataMap[ModpackManifestField.modLoaderVersion.serializableName] ?? "",
       miniature: packDataMap[ModpackManifestField.miniature.serializableName] ?? "pack.png",
       headline: packDataMap[ModpackManifestField.headline.serializableName] ?? "An unknown modpack",
       description: packDataMap[ModpackManifestField.description.serializableName] ?? "Unknown modpack, tell the author to describe it",
@@ -255,6 +271,7 @@ class PackInstaller {
       discord: Uri.tryParse(packDataMap[ModpackManifestField.discord.serializableName] ?? ""),
       server: packDataMap[ModpackManifestField.serverIp.serializableName] ?? "",
       author: packDataMap[ModpackManifestField.authorName.serializableName] ?? "Unknown",
+      ram: packDataMap[ModpackManifestField.ram.serializableName] ?? 0
     );
 
     String profileName = "${data.name} ${data.mcVersion}";
@@ -298,14 +315,14 @@ class PackInstaller {
     final String errorMessage = "No matching game version found, download the correct version at : "
         "${getModLoaderDownloadLink(reference.loader, reference.mcVersion, reference.loaderVersion)} ";
     if(exactMatch.isNotEmpty){
-      print("Version $exactMatch found !");
+      print("${messageSpacer}Version $exactMatch found !");
     } else if(possibleVersions.isNotEmpty){
       String versionListPrint = "";
       for (var element in possibleVersions) {versionListPrint += "\n  $element";}
-      print("$errorMessage"
+      print("$messageSpacer$errorMessage"
           "\nor use one of the following at your own risk : $versionListPrint");
     } else {
-      print(errorMessage);
+      print("$messageSpacer$errorMessage");
     }
 
     return exactMatch;
