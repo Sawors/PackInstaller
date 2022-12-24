@@ -1,13 +1,20 @@
 /*import 'package:flutter/material.dart';*/
+import 'dart:io';
+
 import 'package:flutter_app_test/modpack_installer/worker/pack_downloader.dart';
 
 /*import 'dog_card.dart';
 import 'dog_model.dart';*/
 
-void main() {
+void main(List<String> args) {
   //runApp(const MyApp());
   ProfileManager.init();
-  PackInstaller.setupModpack(Uri.parse("https://github.com/Sawors/PackInstaller/raw/7275934d2325eb08ea531130917f7701eba14739/lib/modpack_installer/sample_modpack/sample_modpack.zip"));
+  // tiboise : https://github.com/Sawors/1.16.5-Tiboise/archive/refs/heads/main.zip
+  String dlLink = args.isNotEmpty ? args[0] : "https://github.com/Sawors/PackInstaller/raw/main/lib/modpack_installer/sample_modpack/sample_modpack.zip";
+  //"C:\Users\sosol\AppData\Roaming\.minecraft\.profiles\Sample 1.16.5 2"
+  //PackUpdater.getUpdateContent(Directory("C:\\Users\\sosol\\AppData\\Roaming\\.minecraft\\.profiles\\1.16.5-Tiboise-main"), Directory("C:\\Users\\sosol\\AppData\\Roaming\\.minecraft\\.profiles\\forge 1.16.5 base\\1.16.5-Tiboise"));
+  PackUpdater.getUpdate(Directory("C:\\Users\\sosol\\AppData\\Roaming\\.minecraft\\.profiles\\Sample 1.16.5"), Directory("C:\\Users\\sosol\\AppData\\Roaming\\.minecraft\\.profiles\\Sample 1.16.5 2"));
+  //PackInstaller.setupModpack(Uri.parse(dlLink));
 }
 
 
