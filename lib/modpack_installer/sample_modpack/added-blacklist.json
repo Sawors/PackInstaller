@@ -1,0 +1,15 @@
+{
+	"blacklist": [
+		".git",
+		".mixin.out",
+		".replay_cache",
+		"backups",
+		"crash-reports",
+		"Distant_Horizons_server_data",
+		"etched-sounds",
+		"logs",
+		"replay_recordings",
+		"screenshots",
+		".bak"
+	]
+}

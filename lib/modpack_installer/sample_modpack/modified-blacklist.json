@@ -1,0 +1,15 @@
+{
+	"blacklist": [
+		".zip",
+		".jar",
+		".exe",
+		".fsh",
+		".vsh",
+		".glsl",
+		".placebo",
+		".bak",
+		"options.txt",
+		"optionsof.txt",
+		"servers.dat"
+	]
+}

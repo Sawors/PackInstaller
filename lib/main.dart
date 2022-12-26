@@ -1,7 +1,8 @@
 /*import 'package:flutter/material.dart';*/
 import 'dart:io';
 
-import 'package:flutter_app_test/modpack_installer/worker/pack_downloader.dart';
+import 'modpack_installer/worker/pack_downloader.dart';
+
 
 /*import 'dog_card.dart';
 import 'dog_model.dart';*/
