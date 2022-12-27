@@ -14,7 +14,8 @@ void main(List<String> args) {
   String dlLink = args.isNotEmpty ? args[0] : "https://github.com/Sawors/PackInstaller/raw/main/lib/modpack_installer/sample_modpack/sample_modpack.zip";
   //"C:\Users\sosol\AppData\Roaming\.minecraft\.profiles\Sample 1.16.5 2"
   //PackUpdater.getUpdateContent(Directory("C:\\Users\\sosol\\AppData\\Roaming\\.minecraft\\.profiles\\1.16.5-Tiboise-main"), Directory("C:\\Users\\sosol\\AppData\\Roaming\\.minecraft\\.profiles\\forge 1.16.5 base\\1.16.5-Tiboise"));
-  PackUpdater.getUpdate(Directory("C:\\Users\\sosol\\AppData\\Roaming\\.minecraft\\.profiles\\Sample 1.16.5"), Directory("C:\\Users\\sosol\\AppData\\Roaming\\.minecraft\\.profiles\\Sample 1.16.5 2"));
+  const String root = "C:\\Users\\ytsaw\\AppData\\Roaming\\.minecraft\\.profiles";
+  PackUpdater.getUpdate(Directory("$root\\Sample 1.16.5"), Directory("$root\\Sample 1.16.5 2"));
   //PackInstaller.setupModpack(Uri.parse(dlLink));
 }
 

@@ -548,12 +548,10 @@ class _UpdateContent {
       // the old and new modpacks have manifests
       Map<String, dynamic> oldPackDataMap =  ProfileManager.readJsonFile(oldManifest.path);
       baseVersion = oldPackDataMap[_ModpackManifestField.modpackVersion.serializableName] ?? "";
-      print(baseVersion);
       final List<String> baseVersionTree = baseVersion.split(".");
 
       Map<String, dynamic> newPackDataMap = ProfileManager.readJsonFile(newManifest.path);
       newVersion = newPackDataMap[_ModpackManifestField.modpackVersion.serializableName] ?? "";
-      print(newVersion);
       final List<String> newVersionTree = newVersion.split(".");
 
       for(int i = 0; i<min(baseVersionTree.length, newVersionTree.length); i++){
@@ -600,71 +598,106 @@ class _UpdateContent {
         e.path.replaceAll(newRootPath, "") : e
     };
 
+
+    // blacklist loading :
+    // the blacklist from the "updated" directory is first loaded, then
+    // the blacklist coming from the user's directory is added to it (removing duplicates)
+
     // TODO : add a config for this list (add-ignore.json)
-    const List<String> ignoreAdded = [
-      ".git",
-      ".mixin.out",
-      ".replay_cache",
-      "backups",
-      "crash-reports",
-      "Distant_Horizons_server_data",
-      "etched-sounds",
-      "logs",
-      "replay_recordings",
-      "screenshots",
-      ".bak"
-    ];
+    Set<String> ignoreAdded = {};
+    const Set<String> defaultIgnoreAdded = {
+      ".git*",
+      ".mixin.out*",
+      ".replay_cache*",
+      "backups*",
+      "crash-reports*",
+      "Distant_Horizons_server_data*",
+      "etched-sounds*",
+      "logs*",
+      "replay_recordings*",
+      "screenshots*",
+      "*.bak"
+    };
     // TODO : add a config for this list (remove-ignore.json)
-    const List<String> ignoreRemoved = [
-      ".git",
-      ".mixin.out",
-      ".replay_cache",
-      "backups",
-      "crash-reports",
-      "Distant_Horizons_server_data",
-      "etched-sounds",
-      "logs",
-      "replay_recordings",
-      "resourcepacks",
-      "shaderpacks",
-      "screenshots",
+    Set<String> ignoreRemoved = {};
+    const Set<String> defaultIgnoreRemoved = {
+      ".git*",
+      ".mixin.out*",
+      ".replay_cache*",
+      "backups*",
+      "crash-reports*",
+      "Distant_Horizons_server_data*",
+      "etched-sounds*",
+      "logs*",
+      "replay_recordings*",
+      "resourcepacks*",
+      "shaderpacks*",
+      "screenshots*",
       "servers.dat_old",
       "usercache.json",
       "usernamecache.json",
-      ".bak"
-    ];
+      "*.bak"
+    };
 
     // TODO : add a config for this list (edit-ignore.json)
-    const List<String> ignoreEdited = [
-      ".zip",
-      ".jar",
-      ".exe",
-      ".fsh",
-      ".vsh",
-      ".glsl",
-      ".placebo",
-      ".bak",
+    Set<String> ignoreModified = {};
+    const Set<String> defaultIgnoreModified = {
+      "*.zip",
+      "*.jar",
+      "*.exe",
+      "*.fsh",
+      "*.vsh",
+      "*.glsl",
+      "*.placebo",
+      "*.bak",
       "options.txt",
       "optionsof.txt",
       "servers.dat"
-    ];
+    };
+
+    // loading blacklists
+    Set<String> blacklistSources = {oldRootPath,newRootPath};
+    for(String rootPath in blacklistSources){
+      Directory configDirectory = Directory("$rootPath${separator}updater-config");
+      if(configDirectory.existsSync()){
+        File blacklistsFile = File("${configDirectory.path}${separator}blacklists.json");
+        if(blacklistsFile.existsSync()){
+          Map<String, dynamic> configData =  ProfileManager.readJsonFile(blacklistsFile.path);
+          //.addAll((configData["added-blacklist"] ?? []));
+          List<dynamic> read = (configData["ignore-added"] ?? []);
+          for (var element in read) {ignoreAdded.add(element.toString());}
+          read = (configData["ignore-removed"] ?? []);
+          for (var element in read) {ignoreRemoved.add(element.toString());}
+          read = (configData["ignore-modified"] ?? []);
+          for (var element in read) {ignoreModified.add(element.toString());}
+
+        }
+      }
+    }
+    if(ignoreAdded.isEmpty) ignoreAdded.addAll(defaultIgnoreAdded);
+    if(ignoreRemoved.isEmpty) ignoreRemoved.addAll(defaultIgnoreRemoved);
+    if(ignoreModified.isEmpty) ignoreModified.addAll(defaultIgnoreModified);
+
+    print(ignoreAdded);
+    print(ignoreRemoved);
+    print(ignoreModified);
 
     final Map<String, FileSystemEntity> addedContent = {};
     for(var entry in newContent.entries){
-      if(!oldContent.containsKey(entry.key) && ignoreAdded.indexWhere((element) => entry.key.startsWith("$separator$element")) < 0){
+      if(!oldContent.containsKey(entry.key) && !isBlacklisted(entry.key, ignoreAdded)){
         addedContent[entry.key] = entry.value;
       }
     }
     final Map<String, FileSystemEntity> removedContent ={};
     for(var entry in oldContent.entries){
-      if(!newContent.containsKey(entry.key) && ignoreRemoved.indexWhere((element) => entry.key.startsWith("$separator$element")) < 0){
+      if(!newContent.containsKey(entry.key) && !isBlacklisted(entry.key, ignoreRemoved)){
 
         removedContent[entry.key] = entry.value;
       }
     }
     final Map<String, FileSystemEntity> modifiedContent ={};
     for(var entry in oldContent.entries){
-      if(!removedContent.containsKey(entry.key) && !addedContent.containsKey(entry.key) && newContent.containsKey(entry.key) && newContent[entry.key] is File && oldContent[entry.key] is File && ignoreEdited.indexWhere((element) => entry.key.endsWith(element)) < 0){
+      if(!removedContent.containsKey(entry.key) && !addedContent.containsKey(entry.key) && newContent.containsKey(entry.key) && newContent[entry.key] is File && oldContent[entry.key] is File && !isBlacklisted(entry.key, ignoreRemoved)){
         try{
           String oldData = await File(oldContent[entry.key]!.path).readAsString();
           String newData = await File(newContent[entry.key]!.path).readAsString();
@@ -686,6 +719,29 @@ class _UpdateContent {
     updateContent[_UpdateState.modified] = modifiedContent;
 
     return updateContent;
+  }
+
+  static bool isBlacklisted(String toCheck, Set<String> blacklist) {
+    String toCheckFormatted = toCheck.replaceAll("\\", "/");
+    if(toCheckFormatted.isNotEmpty && toCheckFormatted.split("")[0] == "/"){
+      toCheckFormatted = toCheckFormatted.replaceFirst("/", "");
+    }
+    for(String ref in blacklist){
+      //if(ref.isEmpty) continue;
+      String refStripped = ref.replaceAll("*", "").replaceAll("\\", "/");
+      if(refStripped.endsWith("/")){
+        refStripped = refStripped.substring(0,refStripped.length-1);
+      }
+      if(ref.startsWith("*") && toCheckFormatted.endsWith(refStripped)){
+        return toCheckFormatted.endsWith(refStripped);
+      } else if(ref.endsWith("*") && toCheckFormatted.startsWith(refStripped)){
+        return toCheckFormatted.startsWith(refStripped);
+      } else if (toCheckFormatted == refStripped){
+        return toCheckFormatted == refStripped;
+      }
+    }
+
+    return false;
   }
 
 

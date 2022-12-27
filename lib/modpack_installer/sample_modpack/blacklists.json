@@ -1,0 +1,46 @@
+{
+	"added-blacklist": [
+		".git*",
+		".mixin.out*",
+		".replay_cache*",
+		"backups*",
+		"crash-reports*",
+		"Distant_Horizons_server_data*",
+		"etched-sounds*",
+		"logs*",
+		"replay_recordings*",
+		"screenshots*",
+		"*.bak"
+	],
+	"removed-blacklist": [
+		".git*",
+		".mixin.out*",
+		".replay_cache*",
+		"backups*",
+		"crash-reports*",
+		"Distant_Horizons_server_data*",
+		"etched-sounds*",
+		"logs*",
+		"replay_recordings*",
+		"resourcepacks*",
+		"shaderpacks*",
+		"screenshots*",
+		"servers.dat_old",
+		"usercache.json",
+		"usernamecache.json",
+		"*.bak"
+	],
+	"modified-blacklist": [
+		"*.zip",
+		"*.jar",
+		"*.exe",
+		"*.fsh",
+		"*.vsh",
+		"*.glsl",
+		"*.placebo",
+		"*.bak",
+		"options.txt",
+		"optionsof.txt",
+		"servers.dat"
+	]
+}
