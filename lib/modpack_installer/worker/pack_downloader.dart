@@ -115,7 +115,7 @@ enum _ModLoader {
 
 
 
-class _ModpackData {
+class ModpackData {
   static const manifestFileName = "modpack.json";
   String name;
   String mcVersion;
@@ -132,7 +132,7 @@ class _ModpackData {
   int ram;
   bool noManifest;
 
-  _ModpackData({
+  ModpackData({
           this.name = "Unnamed",
           this.mcVersion = "latest-release",
           this.loader = _ModLoader.vanilla,
@@ -153,7 +153,7 @@ class _ModpackData {
     return "$name $mcVersion";
   }
 
-  _ModpackData.fromFile(File manifest) :
+  ModpackData.fromFile(File manifest) :
         name = "Unnamed",
         mcVersion = "latest-release",
         loader = _ModLoader.vanilla,
@@ -186,6 +186,35 @@ class _ModpackData {
     author = packDataMap[_ModpackManifestField.authorName.serializableName] ?? author;
     ram = packDataMap[_ModpackManifestField.ram.serializableName] != null ? int.tryParse(packDataMap[_ModpackManifestField.ram.serializableName]) ?? ram : ram;
     noManifest = !hasManifest;
+  }
+
+  /// Returns true if the second version is greater than the first.
+  static bool compareVersions(String v1, String v2){
+
+    final List<String> baseVersionTree = v1.split(".");
+    final List<String> newVersionTree = v2.split(".");
+
+    // will compare version based on the split
+
+    final bool sizeDifference = baseVersionTree.length != newVersionTree.length;
+    final int minLength = min(baseVersionTree.length, newVersionTree.length);
+    for(int i = 1; i<=minLength; i++){
+      int baseTag = int.tryParse(baseVersionTree[i-1]) ?? -1;
+      int updateTag = int.tryParse(newVersionTree[i-1]) ?? -1;
+      if(baseTag == updateTag) {
+        // if we are at the end of the check and the versions are the same
+        // it will compare versions length
+        if(i == minLength && sizeDifference){
+          return baseVersionTree.length < newVersionTree.length;
+        }
+        continue;
+      } else {
+        return baseTag < updateTag;
+      }
+
+    }
+
+    return false;
   }
 
 }
@@ -228,7 +257,7 @@ class PackInstaller {
     print("-> Downloaded modpack !");
     // reads the manifest and unpacks the zip file to the (generated) profile directory
     print("-> Installing modpack...");
-    _ModpackData modpackData = await _installModpack(modpackArchive);
+    ModpackData modpackData = await _installModpack(modpackArchive);
     print("-> Installed modpack !");
     // checks if the modloader version is present
     print("-> Searching versions...");
@@ -325,16 +354,18 @@ class PackInstaller {
     return target;
   }
 
-
-  static Future<_ModpackData> _installModpack(File modpackArchive) async {
+  // Modpack installation method
+  static Future<ModpackData> _installModpack(File modpackArchive) async {
 
     // TODO : UPDATE HANDLING
     //  - check if a modpack.json already exists in the target installation directory
     //  - if so compare versions
     //  - if updatable -> propose to choose : update or reinstall (could be specified by default)
     //  - handle non-destructive updates (ie only replacing updated files)
+    // check for modpack.json, then if no occurrence is found check for directory
+    // name and then ONLY reinstall
 
-    const String manifestFileName = _ModpackData.manifestFileName;
+    const String manifestFileName = ModpackData.manifestFileName;
 
     final String downloadId = _getFileName(modpackArchive);
     final Directory target = Directory(modpackArchive.parent.path+separator+downloadId);
@@ -384,7 +415,7 @@ class PackInstaller {
       }
     }
 
-    _ModpackData data = _ModpackData.fromFile(manifest);
+    ModpackData data = ModpackData.fromFile(manifest);
 
     String profileName = hasManifest ? "${data.name} ${data.mcVersion}" : _getFileName(modpackRoot);
     if(!hasManifest){
@@ -393,13 +424,50 @@ class PackInstaller {
     Directory profileDirectory = Directory(ProfileManager.profileCollectionRootDirectory.path+separator+profileName);
 
     try{
+      // Check if the directory already exists, if it does check if manifests are
+      // present.
+      // Then try to create the _UpdateContent and print the patchnote
+      // FOR THE MOMENT we'll stop here, however in the future we'll print
+      // the patchnote and show an [UPDATE] button + a box to select if the user
+      // want to auto-update
+      // -> maybe for little updates (size of the update is
+      // less than half the size of the already present modpack (in term of
+      // number of files modified) we'll auto-update without notifying the user.
+      // -> Patchnotes should still be stored somewhere in order to print them to
+      //    the user on demand (it's better to store patchnotes locally)
+
+
+      // checking for similar manifests
+      await ProfileManager.profileCollectionRootDirectory.list().forEach((element) {
+        final String basePath = element.path;
+        if(hasManifest){
+          File manifestFile = File(basePath+separator+ModpackData.manifestFileName);
+          ModpackData refData = ModpackData.fromFile(manifestFile);
+          if(manifestFile.existsSync()
+              && refData.name == data.name
+              && ModpackData.compareVersions(refData.packVersion, data.packVersion)
+          ){
+            // exact match found, starting the update process
+            // TODO : update
+          } else if (element.path == profileDirectory.path) {
+            // alternate match found, starting the update process
+            // TODO : update
+          }
+        }
+      });
       profileDirectory.create();
     } on FileSystemException catch (e){
       print(e);
     }
 
+
+    // FROM HERE THE PACK IS LOADED AND WILL BE TRANSFERRED FROM THE DOWNLOAD
+    // DIRECTORY TO ITS FINAL LOCATION
+
+    // copy the pack
     await copyPath(modpackRoot.path, profileDirectory.path);
 
+    // remove temp directories
     try{if(target.existsSync()) target.delete(recursive: true);} on FileSystemException catch (e){print(e);}
     try{if(modpackArchive.existsSync()) modpackArchive.delete();} on FileSystemException catch (e){print(e);}
 
@@ -408,7 +476,7 @@ class PackInstaller {
     return data;
   }
 
-  static Future<String> _checkLauncherGameVersion(_ModpackData reference, [bool printResult = false]) async {
+  static Future<String> _checkLauncherGameVersion(ModpackData reference, [bool printResult = false]) async {
     Stream<FileSystemEntity> versions = Directory("${ProfileManager._root.path}${separator}versions").list(recursive: false, followLinks: false);
     List<String> possibleVersions = [];
 
@@ -442,7 +510,7 @@ class PackInstaller {
     return exactMatch;
   }
 
-  static Future<_ProfileData> _generateProfile(_ModpackData sourceData) async {
+  static Future<_ProfileData> _generateProfile(ModpackData sourceData) async {
 
     int ram = 4;
     int systemRam = 34359738368 ~/ (1024*1024*1024);
@@ -535,12 +603,14 @@ class _UpdateContent {
   String updateDirectoryPath = "";
   String baseVersion = "";
   String newVersion = "";
+  static final String relativePatchNotePath = "installer-config${separator}patchnote";
+
 
   Future<_UpdateContent> getFromFile({required final Directory oldVersionRoot, required final Directory newVersionRoot}) async {
 
     oldDirectoryPath = oldVersionRoot.path;
     updateDirectoryPath = newVersionRoot.path;
-    const String manifestFileName = _ModpackData.manifestFileName;
+    const String manifestFileName = ModpackData.manifestFileName;
     File oldManifest = File(oldDirectoryPath+separator+manifestFileName);
     File newManifest = File(updateDirectoryPath+separator+manifestFileName);
 
@@ -553,25 +623,15 @@ class _UpdateContent {
       Map<String, dynamic> newPackDataMap = ProfileManager.readJsonFile(newManifest.path);
       newVersion = newPackDataMap[_ModpackManifestField.modpackVersion.serializableName] ?? "";
       final List<String> newVersionTree = newVersion.split(".");
+      if(baseVersion != newVersion && !ModpackData.compareVersions(baseVersion, newVersion)){
+        // This case is an error. Reversing the versions
+        final String tempVersion = baseVersion;
+        baseVersion = newVersion;
+        newVersion = tempVersion;
 
-      for(int i = 0; i<min(baseVersionTree.length, newVersionTree.length); i++){
-        int baseTag = int.tryParse(baseVersionTree[i]) ?? -1;
-        int updateTag = int.tryParse(newVersionTree[i]) ?? -1;
-        if(baseTag == updateTag) continue;
-        if(baseTag < updateTag) break;
-        if(baseTag > updateTag){
-          // This case is an error. Reversing the versions
-          final String tempVersion = baseVersion;
-          baseVersion = newVersion;
-          newVersion = tempVersion;
-
-          final String tempDir = oldDirectoryPath;
-          oldDirectoryPath = updateDirectoryPath;
-          updateDirectoryPath = tempDir;
-          print(oldDirectoryPath);
-          print(updateDirectoryPath);
-          break;
-        }
+        final String tempDir = oldDirectoryPath;
+        oldDirectoryPath = updateDirectoryPath;
+        updateDirectoryPath = tempDir;
       }
 
     }
@@ -677,6 +737,9 @@ class _UpdateContent {
     if(ignoreAdded.isEmpty) ignoreAdded.addAll(defaultIgnoreAdded);
     if(ignoreRemoved.isEmpty) ignoreRemoved.addAll(defaultIgnoreRemoved);
     if(ignoreModified.isEmpty) ignoreModified.addAll(defaultIgnoreModified);
+    ignoreAdded.add("updater-config/patchnote*");
+    ignoreRemoved.add("updater-config/patchnote*");
+    ignoreModified.add("updater-config/patchnote*");
 
     print(ignoreAdded);
     print(ignoreRemoved);
@@ -766,6 +829,10 @@ class _UpdateContent {
     }
 
     return "$topBreak$patchNote\n$bottomBreak";
+  }
+
+  String generatePatchNoteFileName(){
+    return "patchnote $baseVersion-$newVersion";
   }
 }
 
