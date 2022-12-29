@@ -459,12 +459,10 @@ class PackInstaller {
           print(update.generatePatchNote());
           data.isUpdated = true;
           print("-> Updated modpack !");
-          try{if(target.existsSync()) target.delete(recursive: true);} on FileSystemException catch (e){print(e);}
-          try{if(modpackArchive.existsSync()) modpackArchive.delete();} on FileSystemException catch (e){print(e);}
           // TODO : Add the actual file updating logic.
           final addedFilePaths = update.added;
           final removedFilePaths = update.removed;
-          final modifiedFilePaths = update.removed;
+          final modifiedFilePaths = update.modified;
           final String downloadedDirPath = update.updateDirectoryPath;
           final String oldDirPath = update.oldDirectoryPath;
           for(var path in addedFilePaths){
@@ -489,13 +487,15 @@ class PackInstaller {
             File base = File(downloadedDirPath+separator+path);
             File target = File(oldDirPath+separator+path);
             try{
+              target.deleteSync();
               base.copySync(target.path);
             } on FileSystemException catch(e){
               print(e);
             }
           }
 
-
+          try{if(target.existsSync()) target.delete(recursive: true);} on FileSystemException catch (e){print(e);}
+          try{if(modpackArchive.existsSync()) modpackArchive.delete();} on FileSystemException catch (e){print(e);}
           return data;
         }
       }
