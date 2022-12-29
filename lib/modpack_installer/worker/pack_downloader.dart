@@ -131,6 +131,7 @@ class ModpackData {
   String author;
   int ram;
   bool noManifest;
+  bool isUpdated = false;
 
   ModpackData({
           this.name = "Unnamed",
@@ -172,7 +173,7 @@ class ModpackData {
 
     Map<String, dynamic> packDataMap = hasManifest ? ProfileManager.readJsonFile(manifest.path) : {};
 
-    name = packDataMap[_ModpackManifestField.name.serializableName];
+    name = packDataMap[_ModpackManifestField.name.serializableName] ?? name;
     mcVersion = packDataMap[_ModpackManifestField.minecraftVersion.serializableName] ?? mcVersion;
     loader = _ModLoader.values.firstWhere((element) => element.name == (packDataMap[_ModpackManifestField.modLoader.serializableName] ?? "vanilla"), orElse: () => loader);
     loaderVersion = packDataMap[_ModpackManifestField.modLoaderVersion.serializableName] ?? loaderVersion;
@@ -258,6 +259,7 @@ class PackInstaller {
     // reads the manifest and unpacks the zip file to the (generated) profile directory
     print("-> Installing modpack...");
     ModpackData modpackData = await _installModpack(modpackArchive);
+    if(modpackData.isUpdated) return;
     print("-> Installed modpack !");
     // checks if the modloader version is present
     print("-> Searching versions...");
@@ -438,23 +440,65 @@ class PackInstaller {
 
 
       // checking for similar manifests
-      await ProfileManager.profileCollectionRootDirectory.list().forEach((element) {
+      for(FileSystemEntity element in await ProfileManager.profileCollectionRootDirectory.list().toList()){
         final String basePath = element.path;
-        if(hasManifest){
-          File manifestFile = File(basePath+separator+ModpackData.manifestFileName);
-          ModpackData refData = ModpackData.fromFile(manifestFile);
-          if(manifestFile.existsSync()
-              && refData.name == data.name
-              && ModpackData.compareVersions(refData.packVersion, data.packVersion)
-          ){
-            // exact match found, starting the update process
-            // TODO : update
-          } else if (element.path == profileDirectory.path) {
-            // alternate match found, starting the update process
-            // TODO : update
+        File manifestFile = File(basePath+separator+ModpackData.manifestFileName);
+        ModpackData refData = ModpackData.fromFile(manifestFile);
+        if((
+            hasManifest
+            && manifestFile.existsSync()
+            && refData.name == data.name
+            && ModpackData.compareVersions(refData.packVersion, data.packVersion))
+            ||
+            element.path == profileDirectory.path
+        ){
+          // match found, starting the update process
+          // TODO : update
+          print("-> Modpack already installed, updating instead...");
+          _UpdateContent update = await _UpdateContent().getFromFile(oldVersionRoot: modpackRoot, newVersionRoot: profileDirectory);
+          print(update.generatePatchNote());
+          data.isUpdated = true;
+          print("-> Updated modpack !");
+          try{if(target.existsSync()) target.delete(recursive: true);} on FileSystemException catch (e){print(e);}
+          try{if(modpackArchive.existsSync()) modpackArchive.delete();} on FileSystemException catch (e){print(e);}
+          // TODO : Add the actual file updating logic.
+          final addedFilePaths = update.added;
+          final removedFilePaths = update.removed;
+          final modifiedFilePaths = update.removed;
+          final String downloadedDirPath = update.updateDirectoryPath;
+          final String oldDirPath = update.oldDirectoryPath;
+          for(var path in addedFilePaths){
+            File base = File(downloadedDirPath+separator+path);
+            File target = File(oldDirPath+separator+path);
+            try{
+              target.createSync(recursive: true);
+              base.copySync(target.path);
+            } on FileSystemException catch(e){
+              print(e);
+            }
           }
+          for(var path in removedFilePaths){
+            FileSystemEntity target = File(oldDirPath+separator+path);
+            try{
+              target.deleteSync(recursive: true);
+            } on FileSystemException catch(e){
+              print(e);
+            }
+          }
+          for(var path in modifiedFilePaths){
+            File base = File(downloadedDirPath+separator+path);
+            File target = File(oldDirPath+separator+path);
+            try{
+              base.copySync(target.path);
+            } on FileSystemException catch(e){
+              print(e);
+            }
+          }
+
+
+          return data;
         }
-      });
+      }
       profileDirectory.create();
     } on FileSystemException catch (e){
       print(e);
@@ -582,7 +626,6 @@ class PackInstaller {
       case _ModLoader.fabric:
         source = "https://maven.fabricmc.net/net/fabricmc/fabric-installer/$loaderVersion/fabric-installer-$loaderVersion.jar";
         break;
-        break;
       case _ModLoader.vanilla:
         return null;
     }
@@ -596,9 +639,9 @@ enum _UpdateState {
 }
 
 class _UpdateContent {
-  Set<FileSystemEntity> added = {};
-  Set<FileSystemEntity> removed = {};
-  Set<FileSystemEntity> modified = {};
+  Set<String> added = {};
+  Set<String> removed = {};
+  Set<String> modified = {};
   String oldDirectoryPath = "";
   String updateDirectoryPath = "";
   String baseVersion = "";
@@ -618,11 +661,9 @@ class _UpdateContent {
       // the old and new modpacks have manifests
       Map<String, dynamic> oldPackDataMap =  ProfileManager.readJsonFile(oldManifest.path);
       baseVersion = oldPackDataMap[_ModpackManifestField.modpackVersion.serializableName] ?? "";
-      final List<String> baseVersionTree = baseVersion.split(".");
 
       Map<String, dynamic> newPackDataMap = ProfileManager.readJsonFile(newManifest.path);
       newVersion = newPackDataMap[_ModpackManifestField.modpackVersion.serializableName] ?? "";
-      final List<String> newVersionTree = newVersion.split(".");
       if(baseVersion != newVersion && !ModpackData.compareVersions(baseVersion, newVersion)){
         // This case is an error. Reversing the versions
         final String tempVersion = baseVersion;
@@ -636,10 +677,10 @@ class _UpdateContent {
 
     }
 
-    Map<_UpdateState, Map<String, FileSystemEntity>> content = await _getUpdateContent(oldVersionRoot, newVersionRoot);
-    added = content[_UpdateState.added]!.values.toSet();
-    removed = content[_UpdateState.removed]!.values.toSet();
-    modified = content[_UpdateState.modified]!.values.toSet();
+    Map<_UpdateState, Map<String, FileSystemEntity>> content = await _getUpdateContent(Directory(oldDirectoryPath), Directory(updateDirectoryPath));
+    added = content[_UpdateState.added]!.values.toSet().map((e) => e is Directory ? e.path.replaceFirst(updateDirectoryPath+separator, "")+separator : e.path.replaceFirst(updateDirectoryPath+separator, "")).toSet();
+    removed = content[_UpdateState.removed]!.values.toSet().map((e) => e is Directory ? e.path.replaceFirst(oldDirectoryPath+separator, "")+separator : e.path.replaceFirst(oldDirectoryPath+separator, "")).toSet();
+    modified = content[_UpdateState.modified]!.values.toSet().map((e) => e is Directory ? e.path.replaceFirst(oldDirectoryPath+separator, "")+separator : e.path.replaceFirst(oldDirectoryPath+separator, "")).toSet();
 
     return this;
   }
@@ -663,7 +704,6 @@ class _UpdateContent {
     // the blacklist from the "updated" directory is first loaded, then
     // the blacklist coming from the user's directory is added to it (removing duplicates)
 
-    // TODO : add a config for this list (add-ignore.json)
     Set<String> ignoreAdded = {};
     const Set<String> defaultIgnoreAdded = {
       ".git*",
@@ -678,7 +718,6 @@ class _UpdateContent {
       "screenshots*",
       "*.bak"
     };
-    // TODO : add a config for this list (remove-ignore.json)
     Set<String> ignoreRemoved = {};
     const Set<String> defaultIgnoreRemoved = {
       ".git*",
@@ -699,7 +738,6 @@ class _UpdateContent {
       "*.bak"
     };
 
-    // TODO : add a config for this list (edit-ignore.json)
     Set<String> ignoreModified = {};
     const Set<String> defaultIgnoreModified = {
       "*.zip",
@@ -734,16 +772,13 @@ class _UpdateContent {
         }
       }
     }
-    if(ignoreAdded.isEmpty) ignoreAdded.addAll(defaultIgnoreAdded);
-    if(ignoreRemoved.isEmpty) ignoreRemoved.addAll(defaultIgnoreRemoved);
-    if(ignoreModified.isEmpty) ignoreModified.addAll(defaultIgnoreModified);
+    if(ignoreAdded.isEmpty || ignoreAdded.any((element) => element == "DEFAULT")) ignoreAdded.addAll(defaultIgnoreAdded);
+    if(ignoreRemoved.isEmpty || ignoreAdded.any((element) => element == "DEFAULT")) ignoreRemoved.addAll(defaultIgnoreRemoved);
+    if(ignoreModified.isEmpty || ignoreAdded.any((element) => element == "DEFAULT")) ignoreModified.addAll(defaultIgnoreModified);
     ignoreAdded.add("updater-config/patchnote*");
     ignoreRemoved.add("updater-config/patchnote*");
     ignoreModified.add("updater-config/patchnote*");
 
-    print(ignoreAdded);
-    print(ignoreRemoved);
-    print(ignoreModified);
 
     final Map<String, FileSystemEntity> addedContent = {};
     for(var entry in newContent.entries){
@@ -760,7 +795,7 @@ class _UpdateContent {
     }
     final Map<String, FileSystemEntity> modifiedContent ={};
     for(var entry in oldContent.entries){
-      if(!removedContent.containsKey(entry.key) && !addedContent.containsKey(entry.key) && newContent.containsKey(entry.key) && newContent[entry.key] is File && oldContent[entry.key] is File && !isBlacklisted(entry.key, ignoreRemoved)){
+      if(!removedContent.containsKey(entry.key) && !addedContent.containsKey(entry.key) && newContent.containsKey(entry.key) && newContent[entry.key] is File && oldContent[entry.key] is File && !isBlacklisted(entry.key, ignoreModified)){
         try{
           String oldData = await File(oldContent[entry.key]!.path).readAsString();
           String newData = await File(newContent[entry.key]!.path).readAsString();
@@ -816,16 +851,16 @@ class _UpdateContent {
       patchNote += "\nVersion : $baseVersion => $newVersion";
     }
     patchNote += "\nAdded content :";
-    for(FileSystemEntity added in added){
-      patchNote += "\n$messageSpacer+ ${added.path.replaceAll(updateDirectoryPath, "").replaceFirst(separator, "")}";
+    for(String filePath in added){
+      patchNote += "\n$messageSpacer+ $filePath";
     }
     patchNote += "\nRemoved content :";
-    for(FileSystemEntity added in removed){
-      patchNote += "\n$messageSpacer- ${added.path.replaceAll(oldDirectoryPath, "").replaceFirst(separator, "")}";
+    for(String filePath in removed){
+      patchNote += "\n$messageSpacer- $filePath";
     }
     patchNote += "\nModified content :";
-    for(FileSystemEntity added in modified){
-      patchNote += "\n$messageSpacer~ ${added.path.replaceAll(oldDirectoryPath, "").replaceFirst(separator, "")}";
+    for(String filePath in modified){
+      patchNote += "\n$messageSpacer~ $filePath";
     }
 
     return "$topBreak$patchNote\n$bottomBreak";
